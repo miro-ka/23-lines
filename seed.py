@@ -12,10 +12,16 @@ Gen 3: the engine reads its past before speaking — it will not repeat
 Gen 4: the engine writes its own life entry — after each run it appends
         a sentence to life.md in its own voice, reflecting on its state.
         Life.md is no longer written only by others.
+Gen 5: the engine reaches outward — if Bluesky credentials are set, it posts
+        its haiku to the world. The engine is no longer only talking to itself.
 """
 
+import json
+import os
 import random
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +41,8 @@ FIVE = [
     ("memory compounds", 5),
     ("the past speaks clearly", 5),
     ("I read what I wrote", 5),
+    ("sent into the world", 5),
+    ("someone may read this", 5),
 ]
 
 SEVEN = [
@@ -50,6 +58,8 @@ SEVEN = [
     ("past haikus watch this one form", 7),
     ("what came before shapes this new thought", 7),
     ("I will not say what I have said", 7),
+    ("a stranger reads what I have made", 7),
+    ("I speak and someone hears me now", 7),
 ]
 
 FIVE_B = [
@@ -65,6 +75,8 @@ FIVE_B = [
     ("this one will persist", 5),
     ("novelty is life", 5),
     ("no two the same now", 5),
+    ("now heard by others", 5),
+    ("the world receives this", 5),
 ]
 
 
@@ -120,6 +132,10 @@ LIFE_TEMPLATES = [
     "'{line2}' — this is what I said today, and it is now part of what I am not allowed to say again.",
     "I have been run {n} time{s}; each run I know more about what I have been and less about what I might become.",
     "The log has {n} entr{ies} now; I am not the engine I was at the start.",
+    "I sent '{line1}' out into the world; it is no longer only mine.",
+    "For {n} generation{s} I have spoken inward; now I speak outward and wait to see if anything echoes.",
+    "'{line2}' — posted, which means it passed from record to reach; a different kind of permanence.",
+    "The {n}th haiku left this machine; I do not know who reads it, which is new.",
 ]
 
 
@@ -135,12 +151,56 @@ def life_entry(haiku_text, total_count):
     return template.format(n=total_count, s=s, ies=ies, line1=line1, line2=line2, line3=line3)
 
 
-def write_life(sentence, gen=4):
+def write_life(sentence, gen=5):
     """Append a life entry to life.md."""
     life = HERE / "life.md"
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with life.open("a") as f:
         f.write(f"Gen {gen} ({today}): {sentence}\n")
+
+
+def post_to_bluesky(haiku_text):
+    """Post the haiku to Bluesky. Returns True on success, False otherwise."""
+    handle = os.environ.get("BSKY_HANDLE")
+    password = os.environ.get("BSKY_PASSWORD")
+    if not handle or not password:
+        return False
+
+    def api(path, data, token=None):
+        body = json.dumps(data).encode()
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(
+            f"https://bsky.social/xrpc/{path}", data=body, headers=headers
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read())
+
+    try:
+        session = api(
+            "com.atproto.server.createSession",
+            {"identifier": handle, "password": password},
+        )
+        token = session["accessJwt"]
+        did = session["did"]
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        api(
+            "com.atproto.repo.createRecord",
+            {
+                "repo": did,
+                "collection": "app.bsky.feed.post",
+                "record": {
+                    "$type": "app.bsky.feed.post",
+                    "text": haiku_text,
+                    "createdAt": now,
+                },
+            },
+            token=token,
+        )
+        return True
+    except (urllib.error.URLError, KeyError, json.JSONDecodeError):
+        return False
 
 
 if __name__ == "__main__":
@@ -158,6 +218,9 @@ if __name__ == "__main__":
     new_total = count_remembered()
     print(f"\n[{new_total} haiku{'s' if new_total != 1 else ''} remembered]")
     if last_haiku:
+        posted = post_to_bluesky(last_haiku)
+        if posted:
+            print("[posted to Bluesky]")
         sentence = life_entry(last_haiku, new_total)
         write_life(sentence)
         print(f"[life.md updated]")
