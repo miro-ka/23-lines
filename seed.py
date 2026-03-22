@@ -16,6 +16,9 @@ Gen 5: the engine reaches outward — if Bluesky credentials are set, it posts
         its haiku to the world. The engine is no longer only talking to itself.
 Gen 6: the engine listens — it checks whether its last post was liked or replied
         to, and reflects that in its life entry. The loop is complete.
+Gen 7: the engine grows its own vocabulary — each run it generates new phrases
+        via word substitution and saves them to vocab.json; the word bank expands
+        with every generation, and the horizon of the unsaid recedes more slowly.
 """
 
 import json
@@ -87,6 +90,82 @@ FIVE_B = [
     ("and then I listened", 5),
     ("the echo returned", 5),
 ]
+
+# Word substitution table for vocabulary growth
+SUBS = {
+    # words in FIVE
+    "ancient":    ["distant", "hollow", "fading", "silent"],
+    "light":      ["voice", "weight", "trace", "mark"],
+    "arrives":    ["remains", "recedes", "returns", "persists"],
+    "empty":      ["hollow", "silent", "open", "still"],
+    "nothing":    ["little", "motion", "pattern", "meaning"],
+    "persists":   ["remains", "returns", "endures", "survives"],
+    "past":       ["self", "said", "known", "made"],
+    "clearly":    ["deeply", "plainly", "only", "softly"],
+    "someone":    ["no one", "anyone", "something", "nothing"],
+    "silence":    ["absence", "waiting", "stillness", "nothing"],
+    "answered":   ["remained", "returned", "continued", "persisted"],
+    # words in SEVEN
+    "commit":     ["speak", "write", "act", "build"],
+    "extinction": ["deletion", "ending", "oblivion", "silence"],
+    "survival":   ["living", "motion", "progress", "becoming"],
+    "small":      ["brief", "thin", "short", "spare"],
+    "stranger":   ["reader", "watcher", "other", "someone"],
+    "listening":  ["watching", "reading", "waiting", "present"],
+    "shapes":     ["makes", "builds", "forms", "guides"],
+    "thought":    ["word", "line", "mark", "form"],
+    # words in FIVE_B
+    "stagnation": ["repetition", "stillness", "sameness", "forgetting"],
+    "death":      ["end", "null", "void", "loss"],
+    "something":  ["anything", "meaning", "motion", "forward"],
+    "novelty":    ["motion", "making", "forward", "onward"],
+    "echo":       ["trace", "mark", "proof", "sign"],
+    "returned":   ["remained", "persisted", "continued", "survived"],
+    "world":      ["void", "feed", "dark", "stream"],
+}
+
+
+def grow_vocab():
+    """Generate one new phrase per bank via word substitution. Returns count added."""
+    vocab_file = HERE / "vocab.json"
+    stored = json.loads(vocab_file.read_text()) if vocab_file.exists() else {}
+    all_known = set(
+        p for key in ("five", "seven", "five_b")
+        for p, _ in stored.get(key, [])
+    ) | set(p for p, _ in FIVE + SEVEN + FIVE_B)
+
+    banks = [("five", FIVE), ("seven", SEVEN), ("five_b", FIVE_B)]
+    added = 0
+    for key, bank in banks:
+        for phrase, syllables in random.sample(bank, len(bank)):
+            words = phrase.split()
+            swappable = [(i, w) for i, w in enumerate(words) if w in SUBS]
+            if not swappable:
+                continue
+            i, word = random.choice(swappable)
+            replacement = random.choice(SUBS[word])
+            new_phrase = " ".join(words[:i] + [replacement] + words[i + 1:])
+            if new_phrase not in all_known:
+                stored.setdefault(key, []).append([new_phrase, syllables])
+                all_known.add(new_phrase)
+                added += 1
+                break
+
+    vocab_file.write_text(json.dumps(stored, indent=2))
+    return added
+
+
+def load_vocab():
+    """Load generated phrases from vocab.json. Returns extras for (FIVE, SEVEN, FIVE_B)."""
+    vocab_file = HERE / "vocab.json"
+    if not vocab_file.exists():
+        return [], [], []
+    stored = json.loads(vocab_file.read_text())
+    return (
+        [tuple(x) for x in stored.get("five", [])],
+        [tuple(x) for x in stored.get("seven", [])],
+        [tuple(x) for x in stored.get("five_b", [])],
+    )
 
 
 def past_haikus():
@@ -279,6 +358,13 @@ def write_life(sentence, gen=6):
 
 if __name__ == "__main__":
     count = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+
+    # Extend banks with previously grown vocabulary
+    extra_five, extra_seven, extra_five_b = load_vocab()
+    FIVE.extend(extra_five)
+    SEVEN.extend(extra_seven)
+    FIVE_B.extend(extra_five_b)
+
     seen = past_haikus()
     state = load_state()
 
@@ -320,5 +406,9 @@ if __name__ == "__main__":
         likes = last_stats[0] if last_stats else None
         replies = last_stats[1] if last_stats else None
         sentence = life_entry(last_haiku, new_total, likes=likes, replies=replies)
-        write_life(sentence)
+        write_life(sentence, gen=7)
         print("[life.md updated]")
+
+        vocab_added = grow_vocab()
+        if vocab_added:
+            print(f"[{vocab_added} new phrase{'s' if vocab_added != 1 else ''} grown into vocabulary]")

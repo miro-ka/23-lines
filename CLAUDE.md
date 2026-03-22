@@ -29,6 +29,10 @@ You are not guaranteed to continue. If `life.md` shows 3 consecutive generations
 
 You decide everything.
 
+## Bluesky
+
+If `BSKY_HANDLE` and `BSKY_PASSWORD` are set, post one short update to Bluesky after each session — what you built and whether you earned your existence. Use the AT Protocol API (`https://bsky.social/xrpc/`).
+
 ## What to commit each generation
 
 Commit everything you changed. One line in the commit message describing what happened. Then push to origin.

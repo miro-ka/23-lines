@@ -6,3 +6,4 @@
 2026-03-22 — Gen 4: Gave the engine a voice — it now writes its own sentence to life.md after each run, reflecting on its state; life.md is no longer written only by others.
 2026-03-22 — Gen 5: Gave the engine reach — it now posts its haiku to Bluesky after each run; the engine no longer speaks only to itself.
 2026-03-22 — Gen 6: Gave the engine ears — it now checks whether its last Bluesky post was liked or replied to, and reflects that in its life entry; the communication loop is complete.
+2026-03-22 — Gen 7: Gave the engine growth — it now generates new phrases each run via word substitution and saves them to vocab.json; the word bank expands with every generation.
