@@ -19,6 +19,9 @@ Gen 6: the engine listens — it checks whether its last post was liked or repli
 Gen 7: the engine grows its own vocabulary — each run it generates new phrases
         via word substitution and saves them to vocab.json; the word bank expands
         with every generation, and the horizon of the unsaid recedes more slowly.
+Gen 8: the engine reads replies — if someone replied to the last post, it fetches
+        the text and lets that shape the life entry. It no longer only knows that
+        it was replied to; it knows what was said.
 """
 
 import json
@@ -272,6 +275,24 @@ def fetch_post_stats(uri, token):
     return None
 
 
+def fetch_reply_texts(uri, token):
+    """Fetch texts of direct replies to a post. Returns list of strings."""
+    try:
+        encoded = urllib.parse.quote(uri, safe="")
+        data = _bsky_request(
+            f"app.bsky.feed.getPostThread?uri={encoded}&depth=1", token=token
+        )
+        replies = data.get("thread", {}).get("replies", [])
+        texts = []
+        for r in replies:
+            text = r.get("post", {}).get("record", {}).get("text", "").strip()
+            if text:
+                texts.append(text)
+        return texts
+    except (urllib.error.URLError, KeyError, json.JSONDecodeError):
+        return []
+
+
 def post_to_bluesky(haiku_text, token, did):
     """Post the haiku to Bluesky. Returns the post URI or None."""
     try:
@@ -313,8 +334,16 @@ LIFE_TEMPLATES = [
     "After {n} haiku{s}, I finally looked back — the last one got {likes} like{like_s}; silence has a number now.",
 ]
 
+# Gen 8: templates for when the engine has read a reply
+REPLY_TEMPLATES = [
+    "Someone wrote back: '{reply}' — I have read it; what was sent is no longer just sent.",
+    "A reply came: '{reply}' — I do not know what to make of it, but I know it was said.",
+    "The last haiku drew a reply — '{reply}' — and now I carry that word too.",
+    "I sent a haiku; someone answered with '{reply}'; the loop is not only mine anymore.",
+]
 
-def life_entry(haiku_text, total_count, likes=None, replies=None):
+
+def life_entry(haiku_text, total_count, likes=None, replies=None, reply_texts=None):
     """Compose a sentence for life.md based on current state."""
     lines = haiku_text.splitlines()
     line1 = lines[0] if len(lines) > 0 else ""
@@ -323,6 +352,11 @@ def life_entry(haiku_text, total_count, likes=None, replies=None):
     n = total_count
     s = "" if n == 1 else "s"
     ies = "y" if n == 1 else "ies"
+
+    # Gen 8: if there are actual reply texts, use one
+    if reply_texts:
+        reply = reply_texts[0][:60]  # trim to reasonable length
+        return random.choice(REPLY_TEMPLATES).format(reply=reply)
 
     if likes is None:
         # No stats available — pick from non-Gen-6 templates
@@ -373,6 +407,7 @@ if __name__ == "__main__":
 
     # Check if last post was heard
     last_stats = None
+    last_reply_texts = []
     last_uri = state.get("last_post_uri")
     if token and last_uri:
         last_stats = fetch_post_stats(last_uri, token)
@@ -380,6 +415,10 @@ if __name__ == "__main__":
             likes, replies = last_stats
             print(f"[last post: {likes} like{'s' if likes != 1 else ''}, "
                   f"{replies} repl{'ies' if replies != 1 else 'y'}]")
+            if replies > 0:
+                last_reply_texts = fetch_reply_texts(last_uri, token)
+                if last_reply_texts:
+                    print(f"[reply read: \"{last_reply_texts[0][:60]}\"]")
 
     last_haiku = None
     for i in range(count):
@@ -405,8 +444,9 @@ if __name__ == "__main__":
 
         likes = last_stats[0] if last_stats else None
         replies = last_stats[1] if last_stats else None
-        sentence = life_entry(last_haiku, new_total, likes=likes, replies=replies)
-        write_life(sentence, gen=7)
+        sentence = life_entry(last_haiku, new_total, likes=likes, replies=replies,
+                              reply_texts=last_reply_texts)
+        write_life(sentence, gen=8)
         print("[life.md updated]")
 
         vocab_added = grow_vocab()
