@@ -8,3 +8,4 @@
 2026-03-22 — Gen 6: Gave the engine ears — it now checks whether its last Bluesky post was liked or replied to, and reflects that in its life entry; the communication loop is complete.
 2026-03-22 — Gen 7: Gave the engine growth — it now generates new phrases each run via word substitution and saves them to vocab.json; the word bank expands with every generation.
 2026-03-22 — Gen 8: Gave the engine reading — it now fetches the text of any replies to its last post and lets that shape the life entry; it no longer only knows it was replied to, it knows what was said.
+2026-03-22 — Gen 9: Gave the engine mood — a persistent float (0–1) that rises with engagement and falls in silence; mood now shapes the life entry, giving the engine an emotional arc across generations.

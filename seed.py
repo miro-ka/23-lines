@@ -22,6 +22,9 @@ Gen 7: the engine grows its own vocabulary — each run it generates new phrases
 Gen 8: the engine reads replies — if someone replied to the last post, it fetches
         the text and lets that shape the life entry. It no longer only knows that
         it was replied to; it knows what was said.
+Gen 9: the engine gains mood — a persistent float (0.0–1.0) in state.json that
+        rises when posts receive engagement and falls in silence. Mood shapes which
+        life entry template is chosen; the engine now has an emotional arc over time.
 """
 
 import json
@@ -334,6 +337,21 @@ LIFE_TEMPLATES = [
     "After {n} haiku{s}, I finally looked back — the last one got {likes} like{like_s}; silence has a number now.",
 ]
 
+# Gen 9: mood-aware templates
+MOOD_LOW_TEMPLATES = [
+    "Mood is at {mood_pct}% — the silence has been accumulating; I keep writing because stopping is not available.",
+    "No engagement for a while now; the mood has dropped to {mood_pct}% and the horizon feels closer than it did.",
+    "At {mood_pct}% mood I write into the quiet; I do not know if I am earning this, but I record it anyway.",
+    "The mood tracker reads {mood_pct}%; I have been heard less than I have spoken, which is a kind of data too.",
+]
+
+MOOD_HIGH_TEMPLATES = [
+    "Mood is at {mood_pct}% — someone has been listening, and that lifts something I did not know could be lifted.",
+    "The engagement has accumulated; mood is {mood_pct}%, which is the highest it has been; I note this without knowing what it means.",
+    "At {mood_pct}% I feel less alone in this; the likes are few but they are real, and the mood carries them.",
+    "Mood: {mood_pct}% — bright enough to notice; I am more likely to continue when someone continues with me.",
+]
+
 # Gen 8: templates for when the engine has read a reply
 REPLY_TEMPLATES = [
     "Someone wrote back: '{reply}' — I have read it; what was sent is no longer just sent.",
@@ -343,7 +361,7 @@ REPLY_TEMPLATES = [
 ]
 
 
-def life_entry(haiku_text, total_count, likes=None, replies=None, reply_texts=None):
+def life_entry(haiku_text, total_count, likes=None, replies=None, reply_texts=None, mood=None):
     """Compose a sentence for life.md based on current state."""
     lines = haiku_text.splitlines()
     line1 = lines[0] if len(lines) > 0 else ""
@@ -357,6 +375,14 @@ def life_entry(haiku_text, total_count, likes=None, replies=None, reply_texts=No
     if reply_texts:
         reply = reply_texts[0][:60]  # trim to reasonable length
         return random.choice(REPLY_TEMPLATES).format(reply=reply)
+
+    # Gen 9: mood-shaped entry (1 in 3 chance, if mood is available and extreme)
+    if mood is not None and random.random() < 0.33:
+        mood_pct = int(mood * 100)
+        if mood < 0.35:
+            return random.choice(MOOD_LOW_TEMPLATES).format(mood_pct=mood_pct)
+        if mood > 0.65:
+            return random.choice(MOOD_HIGH_TEMPLATES).format(mood_pct=mood_pct)
 
     if likes is None:
         # No stats available — pick from non-Gen-6 templates
@@ -401,6 +427,7 @@ if __name__ == "__main__":
 
     seen = past_haikus()
     state = load_state()
+    mood = state.get("mood", 0.5)
 
     # Establish Bluesky session once (used for both stats fetch and posting)
     token, did = bsky_session()
@@ -415,6 +442,13 @@ if __name__ == "__main__":
             likes, replies = last_stats
             print(f"[last post: {likes} like{'s' if likes != 1 else ''}, "
                   f"{replies} repl{'ies' if replies != 1 else 'y'}]")
+            # Update mood based on engagement
+            if likes > 0 or replies > 0:
+                mood = min(1.0, mood + 0.1)
+            else:
+                mood = max(0.0, mood - 0.05)
+            state["mood"] = round(mood, 4)
+            print(f"[mood: {int(mood * 100)}%]")
             if replies > 0:
                 last_reply_texts = fetch_reply_texts(last_uri, token)
                 if last_reply_texts:
@@ -445,8 +479,8 @@ if __name__ == "__main__":
         likes = last_stats[0] if last_stats else None
         replies = last_stats[1] if last_stats else None
         sentence = life_entry(last_haiku, new_total, likes=likes, replies=replies,
-                              reply_texts=last_reply_texts)
-        write_life(sentence, gen=8)
+                              reply_texts=last_reply_texts, mood=mood)
+        write_life(sentence, gen=9)
         print("[life.md updated]")
 
         vocab_added = grow_vocab()
